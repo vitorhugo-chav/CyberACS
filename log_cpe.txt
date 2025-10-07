@@ -1,0 +1,33 @@
+[2025-10-07 01:10:09] Requisição recebida. IP: 179.242.180.220
+Conteúdo SOAP:
+<?xml version="1.0" encoding="UTF-8"?>
+<soap-env:Envelope xmlns:soap-env="http://schemas.xmlsoap.org/soap/envelope/"
+                   xmlns:soap-enc="http://schemas.xmlsoap.org/soap/encoding/"
+                   xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xmlns:cwmp="urn:dslforum-org:cwmp-1-0">
+    <soap-env:Header>
+        <cwmp:ID soap-env:mustUnderstand="1">1</cwmp:ID>
+    </soap-env:Header>
+    <soap-env:Body>
+        <cwmp:Inform>
+            <DeviceId>
+                <Manufacturer>CyberTech</Manufacturer>
+                <OUI>123456</OUI>
+                <ProductClass>Router-ACME</ProductClass>
+                <SerialNumber>CYBERACS12345</SerialNumber> </DeviceId>
+            <Event eventCode="1 BOOT" commandKey=""/>
+            <MaxEnvelopes>1</MaxEnvelopes>
+            <CurrentTime>2025-10-06T22:00:00Z</CurrentTime>
+            <RetryCount>0</RetryCount>
+            <ParameterList soap-enc:arrayType="cwmp:ParameterValueStruct[1]">
+                <ParameterValueStruct>
+                    <Name>InternetGatewayDevice.DeviceInfo.HardwareVersion</Name>
+                    <Value xsi:type="xsd:string">v2.0</Value>
+                </ParameterValueStruct>
+            </ParameterList>
+        </cwmp:Inform>
+    </soap-env:Body>
+</soap-env:Envelope>
+
+========================================================
