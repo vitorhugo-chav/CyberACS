@@ -1,46 +1,82 @@
 <?php
-// Define o tipo de conteúdo como texto/xml. O CPE espera isso.
-header('Content-Type: text/xml');
+// Inclui o modelo da classe CPE
+require_once __DIR__ . '/src/CPE.php';
 
-// Verifica se a requisição é POST (OBRIGATÓRIO para TR-069)
+use CyberACS\CPE;
+
+// Define o cabeçalho de resposta (text/xml)
+header('Content-Type: text/xml; charset="utf-8"');
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    // Se não for POST, dá um erro e morre.
-    http_response_code(405); // Método não permitido
-    die("Apenas requisições POST são permitidas para o ACS.");
+  http_response_code(405);
+  die("Apenas POST.");
 }
 
-// =========================================================
-// 1. LER O XML/SOAP BRUTO DO CPE
-// O XML do SOAP está no corpo da requisição.
-// =========================================================
 $soap_message = file_get_contents('php://input');
 
-// Se a mensagem estiver vazia, o CPE não enviou nada.
-if (empty($soap_message)) {
-    http_response_code(400); // Requisição inválida
-    die("Corpo da requisição SOAP vazio.");
+// --- Início da Extração de Dados (DOMDocument para iniciantes) ---
+
+$doc = new DOMDocument();
+// A @ desabilita erros de XML mal formatado, mas não recomendado em produção.
+@$doc->loadXML($soap_message);
+
+// Busca as tags de DeviceId e Inform
+$deviceIdNode = $doc->getElementsByTagName('DeviceId')->item(0);
+$informNode = $doc->getElementsByTagName('Inform')->item(0);
+$paramsList = $doc->getElementsByTagName('ParameterValueStruct');
+
+
+if ($deviceIdNode && $informNode) {
+  // 1. Extração de Identificadores (DeviceId)
+  $sn = $deviceIdNode->getElementsByTagName('SerialNumber')->item(0)->nodeValue ?? 'N/A';
+  $manu = $deviceIdNode->getElementsByTagName('Manufacturer')->item(0)->nodeValue ?? 'N/A';
+  $oui = $deviceIdNode->getElementsByTagName('OUI')->item(0)->nodeValue ?? 'N/A';
+  $pc = $deviceIdNode->getElementsByTagName('ProductClass')->item(0)->nodeValue ?? 'N/A';
+
+  // 2. Extração de Parâmetros (versão de hardware)
+  $hwVersion = 'Desconhecida';
+  foreach ($paramsList as $paramStruct) {
+    $name = $paramStruct->getElementsByTagName('Name')->item(0)->nodeValue;
+    if ($name === 'InternetGatewayDevice.DeviceInfo.HardwareVersion') {
+      $hwVersion = $paramStruct->getElementsByTagName('Value')->item(0)->nodeValue;
+      break;
+    }
+  }
+
+  // 3. Criação do Objeto CPE
+  $cpe = new CPE($sn, $manu, $oui, $pc, $hwVersion);
+
+  // --- Lógica de Negócio (Futuro) ---
+  // if (!$cpe->existsInDB()) { $cpe->save(); } 
+
+  // Log detalhado (apenas para debug)
+  error_log("CPE Identificado: " . $cpe->getInfo() . "\n", 3, __DIR__ . '/log_cpe.txt');
+} else {
+  // Se não encontrou as tags esperadas...
+  error_log("Erro: Mensagem SOAP não contém Inform ou DeviceId.\n", 3, __DIR__ . '/log_cpe.txt');
 }
 
-// =========================================================
-// 2. LOGGING INICIAL (IMPORTANTE PARA DEBUG!)
-// Apenas para vermos que o CPE conectou
-// =========================================================
-$log_file = __DIR__ . '/log_cpe.txt';
-$timestamp = date("Y-m-d H:i:s");
-$log_entry = "[$timestamp] Requisição recebida. IP: " . $_SERVER['REMOTE_ADDR'] . "\n";
-$log_entry .= "Conteúdo SOAP:\n" . $soap_message . "\n";
-$log_entry .= "========================================================\n";
+// --- Fim da Extração de Dados ---
 
-// Salva o log. O usuário www-data precisa de permissão de escrita!
-error_log($log_entry, 3, $log_file);
 
-// =========================================================
-// 3. RETORNO PARA O CPE (AINDA NÃO É UM SOAP VÁLIDO, SÓ UM TESTE)
-// Um ACS sempre deve retornar um XML/SOAP para o CPE.
-// Por enquanto, vamos retornar uma mensagem vazia (mas XML válido).
-// =========================================================
-echo '<?xml version="1.0" encoding="utf-8"?>' . "\n";
-echo '<soap-env:Envelope xmlns:soap-env="http://schemas.xmlsoap.org/soap/envelope/" />';
+// 4. Montar o XML de Resposta (InformResponse)
+// O ACS deve sempre responder a um Inform com um InformResponse
+$response_id = $doc->getElementsByTagName('ID')->item(0)->nodeValue ?? '1';
 
-// Fim do script. O CPE vai receber a resposta XML acima.
-?>
+$xml_response = '<?xml version="1.0" encoding="utf-8"?>' . "\n";
+$xml_response .= '<soap-env:Envelope xmlns:soap-env="http://schemas.xmlsoap.org/soap/envelope/" '
+  . 'xmlns:cwmp="urn:dslforum-org:cwmp-1-0">' . "\n";
+$xml_response .= '  <soap-env:Header>' . "\n";
+$xml_response .= '    <cwmp:ID soap-env:mustUnderstand="1">' . $response_id . '</cwmp:ID>' . "\n";
+$xml_response .= '  </soap-env:Header>' . "\n";
+$xml_response .= '  <soap-env:Body>' . "\n";
+$xml_response .= '    <cwmp:InformResponse>' . "\n";
+$xml_response .= '      <MaxEnvelopes>1</MaxEnvelopes>' . "\n"; // Diz que queremos apenas 1 mensagem por sessão
+$xml_response .= '    </cwmp:InformResponse>' . "\n";
+$xml_response .= '  </soap-env:Body>' . "\n";
+$xml_response .= '</soap-env:Envelope>';
+
+echo $xml_response;
+
+// Log final (pode ser apagado depois)
+error_log("Resposta SOAP enviada para o CPE.\n", 3, __DIR__ . '/log_cpe.txt');
